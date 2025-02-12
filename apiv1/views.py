@@ -32,7 +32,7 @@ class SignUpView(generics.CreateAPIView):
     def emailVerification(self, request):
         verificationCode = randint(100000, 999999)
         cache.set(f'verificationCode_{request.data["email"]}', verificationCode, 600)
-        print(verificationCode, f"sent to {request.data["email"]} and will expire in 10 minutes")
+        print(verificationCode, f'sent to {request.data["email"]} and will expire in 10 minutes')
         #EmailMessage("Verification Code", f"Your verification code is: {verificationCode}", to=[request.data['email']]).send()
         return verificationCode
 
