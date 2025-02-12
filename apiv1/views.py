@@ -31,8 +31,8 @@ class SignUpView(generics.CreateAPIView):
 
     def emailVerification(self, request):
         verificationCode = randint(100000, 999999)
-        cache.set(f"verificationCode_{request.data['email']}", verificationCode, 600)
-        print(verificationCode, f"sent to {request.data['email']} and will expire in 10 minutes")
+        cache.set(f"verificationCode_{request.data["email"]}", verificationCode, 600)
+        print(verificationCode, f"sent to {request.data["email"]} and will expire in 10 minutes")
         #EmailMessage("Verification Code", f"Your verification code is: {verificationCode}", to=[request.data['email']]).send()
         return verificationCode
 
@@ -42,7 +42,7 @@ class VerifyEmailView(generics.GenericAPIView):
     serializer_class = SignUpSerializer
 
     def post(self, request, *args, **kwargs):
-        code = cache.get(f'verificationCode_{request.data['email']}')
+        code = cache.get(f'verificationCode_{request.data["email"]}')
 
         recievedCode = int(request.data.get('verificationCode'))
 
@@ -52,7 +52,7 @@ class VerifyEmailView(generics.GenericAPIView):
         serializer = self.get_serializer(data=data)
         if serializer.is_valid():
             serializer.save()
-            user = User.objects.get(email=request.data['email'])
+            user = User.objects.get(email=request.data["email"])
             refresh = RefreshToken.for_user(user)
             access = refresh.access_token
             return Response({"refresh": str(refresh), "access": str(access)}, status=status.HTTP_201_CREATED)
