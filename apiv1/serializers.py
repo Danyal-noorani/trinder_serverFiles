@@ -15,7 +15,6 @@ class ReturnUserSerializer(serializers.ModelSerializer):
         fields = ['id', 'first_name', 'last_name', 'gender', 'age', 'studyYear', 'degree', 'about', 'major',
                   'hobbiesAndInterests', 'isErasmus', 'lookingForPreferences', 'mainImage','images']
 
-
 class SignUpSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(
         required=True,
@@ -68,13 +67,33 @@ class LoginSerializer(serializers.Serializer):
             raise serializers.ValidationError({"message": "Email doesn't exist"})
 
 
+
+class ResetPasswordSerializer(serializers.Serializer):
+    password = serializers.CharField(write_only=True, required=True, validators=[validate_password],
+                                     style={'input_type': 'password'})
+    password2 = serializers.CharField(write_only=True, required=True, style={"input_type": "password"})
+    class meta:
+        model = UserProfile
+        fields = ['email','password','password2','verificationCode']
+
+    def validate(self, attrs):
+        if attrs['password'] != attrs['password2']:
+            raise serializers.ValidationError({"password": "Password fields didn't match."})
+        return attrs
+
+    def update(self, instance, validated_data):
+        instance.set_password(validated_data['password'])
+        instance.save()
+        print("saved password as ", instance.password)
+        return instance
+
 class CompleteProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = UserProfile
         fields = ['gender', 'age', 'studyYear', 'major', 'degree', 'about', 'hobbiesAndInterests',
                   'lookingForPreferences',
                   'images', 'profileCompleted', 'genderPreferences', 'studyYearPreferences', 'degreePreferences',
-                  'isErasmus','first_name','last_name']
+                  'isErasmus','first_name','last_name','email']
 
     def update(self, instance, validated_data):
         for attr, val in validated_data.items():

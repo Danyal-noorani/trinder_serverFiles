@@ -12,8 +12,13 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from django.shortcuts import get_object_or_404
 from django.core.mail import EmailMessage
+import shutil
+import os
 
-
+def generateAuthCode(self, request):
+    verificationCode = randint(1000, 9999)
+    cache.set(f'verificationCode_{request.data["email"]}', verificationCode, 600)
+    return verificationCode
 
 
 # Create your views here.
@@ -24,39 +29,64 @@ class SignUpView(generics.CreateAPIView):
     def post(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         if serializer.is_valid():
-            verification = self.emailVerification(request)
+            verificationCode = generateAuthCode(self,request)
             cache.set(f'data_{request.data["email"]}', request.data, 600)
+            EmailMessage("Sign up verification Code", f"Your verification code is: {verificationCode}",
+                         to=[request.data['email']]).send()
             return Response({"message": "Verification code Sent"}, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    def emailVerification(self, request):
-        verificationCode = randint(100000, 999999)
-        cache.set(f'verificationCode_{request.data["email"]}', verificationCode, 600)
-        print(verificationCode, f'sent to {request.data["email"]} and will expire in 10 minutes')
-        #EmailMessage("Verification Code", f"Your verification code is: {verificationCode}", to=[request.data['email']]).send()
-        return verificationCode
 
-
-class VerifyEmailView(generics.GenericAPIView):
+class ForgotPasswordView(generics.CreateAPIView):
     permission_classes = (AllowAny,)
-    serializer_class = SignUpSerializer
+
+    def post(self, request, *args, **kwargs):
+        if not User.objects.filter(email=request.data.get('email')).exists():
+            return Response({"error": "User does not exist"}, status=status.HTTP_400_BAD_REQUEST)
+        verificationCode = generateAuthCode(self ,request)
+        print(f"{verificationCode} sent to {request.data.get('email')}")
+        # EmailMessage("Password reset verification Code", f"Your verification code is: {verificationCode}",to=[request.data['email']]).send()
+        return Response({"message": "Verification code Sent"}, status=status.HTTP_200_OK)
+
+
+class VerifyAuthCodeActionView(generics.GenericAPIView):
+    permission_classes = (AllowAny,)
 
     def post(self, request, *args, **kwargs):
         code = cache.get(f'verificationCode_{request.data["email"]}')
+        receivedCode = int(request.data.get('verificationCode'))
+        type = request.data.get('type')
+        print(code, receivedCode)
 
-        recievedCode = int(request.data.get('verificationCode'))
-
-        if recievedCode != code:
-            return Response({"error": "Invalid code"}, status=status.HTTP_400_BAD_REQUEST)
-        data = cache.get(f'data_{request.data["email"]}')
-        serializer = self.get_serializer(data=data)
-        if serializer.is_valid():
-            serializer.save()
+        if receivedCode != code:
+            return Response({"error": "Invalid Code"}, status=status.HTTP_400_BAD_REQUEST)
+        # print(request.data)
+        if type == "signUp":
+            data = cache.get(f'data_{request.data["email"]}')
+            serializer = SignUpSerializer(data=data)
+            if serializer.is_valid():
+                serializer.save()
+                user = User.objects.get(email=request.data["email"])
+                refresh = RefreshToken.for_user(user)
+                access = refresh.access_token
+                return Response({"refresh": str(refresh), "access": str(access)}, status=status.HTTP_201_CREATED)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        elif type in ["resetPassword", "passwordChange"]:
+            instance = User.objects.get(email=request.data["email"])
+            serializer = ResetPasswordSerializer(instance, data=request.data, partial=True)
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        elif type == "deleteAccount":
             user = User.objects.get(email=request.data["email"])
-            refresh = RefreshToken.for_user(user)
-            access = refresh.access_token
-            return Response({"refresh": str(refresh), "access": str(access)}, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            folderPath =f'media/user_images/{user.username}_{user.id}'
+            if os.path.exists(folderPath) and os.path.isdir(folderPath):
+                shutil.rmtree(folderPath)
+            user.delete()
+            return Response({"message": "Account deleted"}, status=status.HTTP_200_OK)
+
+
 
 
 class LoginView(generics.GenericAPIView):
@@ -72,13 +102,12 @@ class LoginView(generics.GenericAPIView):
             return Response({
                 "refresh": str(refresh),
                 "access": str(access),
-                "isComplete" : user.profileCompleted
+                "isComplete": user.profileCompleted
             }, status=status.HTTP_200_OK)
-        print(serializer.errors)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-class CompeteProfileView(generics.UpdateAPIView):
+class CompleteProfileView(generics.UpdateAPIView):
     permission_classes = (IsAuthenticated,)
     queryset = User.objects.all()
     parser_classes = (MultiPartParser, FormParser, JSONParser)
@@ -117,7 +146,8 @@ class GetProfilesView(generics.GenericAPIView):
             points__gte=userPoints - 150,
             points__lte=userPoints + 150,
             gender__in=user.genderPreferences, )
-                    .exclude(id=user.id).exclude(id__in=user.profilesAcceptedId).exclude(id__in=user.profilesRejectedId).exclude(id__in=user.temporarySent)
+                    .exclude(id=user.id).exclude(id__in=user.profilesAcceptedId).exclude(
+            id__in=user.profilesRejectedId).exclude(id__in=user.temporarySent)
 
         [:int(request.data.get('amount'))])
 
@@ -194,7 +224,9 @@ class CreateChatRoomView(generics.GenericAPIView):
         user1 = request.user
         user2 = get_object_or_404(User, id=request.data.get('userId'))
         conversation, created = ChatRoom.objects.get_or_create(user1=user1, user2=user2)
-        return Response({"message": "success", "roomId": conversation.id, "userId": user2.id, "selfUserId": user1.id, "selfUserName": user1.first_name, "userName": user2.first_name, "mainImage": user2.mainImage}, status=status.HTTP_201_CREATED)
+        return Response({"message": "success", "roomId": conversation.id, "userId": user2.id, "selfUserId": user1.id,
+                         "selfUserName": user1.first_name, "userName": user2.first_name, "mainImage": user2.mainImage},
+                        status=status.HTTP_201_CREATED)
 
     def get(self, request):
         user = request.user
@@ -239,12 +271,14 @@ class GetMessagesView(generics.GenericAPIView):
 
         return Response(serializer.data, status=status.HTTP_200_OK)
 
+
 class GetSwipedOnSelf(generics.GenericAPIView):
     permission_classes = (IsAuthenticated,)
     serializer_class = SelfSwipedSerializer
 
     def get(self, request, *args, **kwargs):
         user = request.user
-        swipedOn = User.objects.filter(profilesAcceptedId__contains=[user.id]).exclude(id__in=user.profilesAcceptedId).exclude(id__in=user.profilesRejectedId)
+        swipedOn = User.objects.filter(profilesAcceptedId__contains=[user.id]).exclude(
+            id__in=user.profilesAcceptedId).exclude(id__in=user.profilesRejectedId)
         serializer = SelfSwipedSerializer(swipedOn, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)

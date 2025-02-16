@@ -16,7 +16,7 @@ class UserProfile(AbstractUser):
     degree = models.CharField(max_length=30, blank=True, null=True)
     major = models.CharField(max_length=30, blank=True, null=True)
     about = models.CharField(max_length=1000, blank=True, null=True)
-    hobbiesAndInterests = ArrayField(models.CharField(max_length=30), default=list)
+    hobbiesAndInterests = ArrayField(models.CharField(max_length=2000), default=list)
     points = models.IntegerField(default=0)
     profileCompleted = models.BooleanField(default=False)
     isErasmus = models.BooleanField(default=False)
@@ -32,22 +32,22 @@ class UserProfile(AbstractUser):
 
     def save(self, *args, **kwargs):
         tempImages = []
-        print(self.images)
-        for i, image in enumerate(self.images):
-            if 'existing' in image.name:
-                tempImages.append(image.name[8:].replace('|', '/'))
-                continue
-            if i == 0:
-                self.mainImage = f'user_images/{self.username}_{self.id}/{image.name}'
-            if isinstance(image, InMemoryUploadedFile) or isinstance(image,TemporaryUploadedFile):
-                file_path = f'user_images/{self.username}_{self.id}/{image.name}'
-                print(file_path)
-                if not default_storage.exists(f'user_images/{self.username}_{self.id}/{image.name}'):
-                    default_storage.save(file_path, image)
-                tempImages.append(file_path)
-        self.images = []
-        print(tempImages)
-        self.images= tempImages
+        if self.images[0] and hasattr(self.images[0], 'name'):
+            for i, image in enumerate(self.images):
+                if 'existing' in image.name:
+                    tempImages.append(image.name[8:].replace('|', '/'))
+                    continue
+                if i == 0:
+                    self.mainImage = f'user_images/{self.username}_{self.id}/{image.name}'
+                if isinstance(image, InMemoryUploadedFile) or isinstance(image,TemporaryUploadedFile):
+                    file_path = f'user_images/{self.username}_{self.id}/{image.name}'
+                    print(file_path)
+                    if not default_storage.exists(f'user_images/{self.username}_{self.id}/{image.name}'):
+                        default_storage.save(file_path, image)
+                    tempImages.append(file_path)
+            self.images = []
+            print(tempImages)
+            self.images= tempImages
         super().save(*args, **kwargs)
 
     def __str__(self):
